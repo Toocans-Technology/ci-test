@@ -1,0 +1,171 @@
+name: build Java Project and deploy to ECR
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        required: false
+        type: string
+        default: '11'
+      pom_path:
+        required: false
+        type: string
+        default: pom.xml
+      settings_path:
+        required: false
+        type: string
+        default: settings.xml
+      maven_goal:
+        required: false
+        type: string
+        default: package
+    secrets:
+      MAVEN_GITHUB_PACKAGE_PAT:
+        required: true
+        description: GitHub Package Registry PAT
+      MAVEN_GITHUB_PACKAGE_SETTINGS_BASE64:
+        required: true
+        description: Base64 encoded Maven settings.xml
+      ECR_AUTH_ARN:
+        required: true
+        description: ARN for ECR authentication role        
+      CEX_CD_PAT:
+        required: true
+        description: Personal Access Token for CEX CD Repository
+
+
+jobs:
+  set-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_env: ${{ steps.set-env.outputs.deploy_env }}
+
+    steps:
+      - name: Set deploy environment based on branch
+        id: set-env
+        run: |
+          branch="${GITHUB_REF##*/}"
+          if [[ "$branch" == "dev" ]]; then
+            echo "deploy_env=dev" >> "$GITHUB_OUTPUT"
+          elif [[ "$branch" == "qa" ]]; then
+            echo "deploy_env=qa" >> "$GITHUB_OUTPUT"
+          elif [[ "$branch" == "uat" ]]; then
+            echo "deploy_env=uat" >> "$GITHUB_OUTPUT"
+          elif [[ "$branch" == "main" ]]; then
+            echo "deploy_env=prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_env=none" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Print deploy environment
+        run: echo "Deploy environment set to ${{ steps.set-env.outputs.deploy_env }}"
+      - name: Print commit author and PR approver
+        run: |
+          echo "Commit Author: ${{ github.actor }}"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "PR Author: ${{ github.event.pull_request.user.login }}"
+            echo "PR Merged By: ${{ github.event.pull_request.merged_by.login }}"
+          fi
+
+  build:
+    needs: set-environment
+    if: needs.set-environment.outputs.deploy_env != 'none'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.set-environment.outputs.deploy_env }}
+    outputs:
+      branch_name: ${{ steps.vars.outputs.branch_name }}
+      commit_id: ${{ steps.vars.outputs.commit_id }}
+  
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Print deploy environment
+        run: echo "Deploying to ${{ needs.set-environment.outputs.deploy_env }}"
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '8'
+
+      - name: Get CodeArtifact auth token
+        run: |
+         echo "MAVEN_GITHUB_PACKAGE_PAT=${{ secrets.MAVEN_GITHUB_PACKAGE_PAT }}" >> $GITHUB_ENV
+      - name: Set up Maven settings
+        run: |
+          echo "${{ secrets.MAVEN_GITHUB_PACKAGE_SETTINGS_BASE64 }}" | base64 -d > settings.xml
+      - name: Build with Maven
+        run: mvn -f pom.xml -s settings.xml deploy
+      - name: Set project name
+        id: project-name
+        run: |
+          JAR_NAME=$(basename ${{ github.repository }})
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_OUTPUT
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.project-name.outputs.JAR_NAME }}-jar
+          path: target/*.jar
+      - name: Set Docker image tag
+        id: vars
+        run: |
+          BRANCH=$(echo "${GITHUB_REF#refs/heads/}" | tr '/' '-')
+          echo "branch_name=$BRANCH" >> $GITHUB_OUTPUT
+          echo "commit_id=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+      - name: Build Docker image
+        run: |
+          docker build -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ECR_AUTH_ARN }}
+          aws-region: ap-northeast-1
+          role-session-name: github-actions-oidc-toocans
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Push Docker image to ECR
+        run: |
+          docker push 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }}
+
+  deploy:
+    needs:
+      - build
+      - set-environment
+    if: needs.set-environment.outputs.deploy_env != 'none'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.set-environment.outputs.deploy_env }}
+    steps:
+      - name: Debug secrets.CEX_CD_PAT
+        run: |
+          if [ -z "${{ secrets.CEX_CD_PAT }}" ]; then
+            echo "❌ PAT not set"
+            exit 1
+          else
+            echo "✅ PAT is available"
+          fi
+      - name: Checkout cex-cd repo
+        uses: actions/checkout@v4
+        with:
+          repository: zack-zhang-devops/cex-cd
+          token: ${{ secrets.CEX_CD_PAT }}
+          path: cex-cd
+          ref: main
+      - name: Set project name
+        id: project-name
+        run: |
+          PROJECT_NAME=$(basename ${{ github.repository }})
+          echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
+      - name: Update image_tag in cex-cd repo
+        env:
+          TAG: ${{ needs.build.outputs.branch_name }}_${{ needs.build.outputs.commit_id }}
+          DEPLOY_ENV: ${{ needs.set-environment.outputs.deploy_env }}
+          PROJECT_NAME: ${{ steps.project-name.outputs.project_name }}
+        run: |
+          cd cex-cd
+          yq e -i '.global.image_tag = strenv(TAG)' values/${DEPLOY_ENV}/ap-northeast-1/${PROJECT_NAME}.yaml
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]@users.noreply.github.com"
+          git add values/${DEPLOY_ENV}/ap-northeast-1/${PROJECT_NAME}.yaml
+          git commit -m "Update image_tag to $TAG, Commit Author: ${{ github.actor }}"
+          git push

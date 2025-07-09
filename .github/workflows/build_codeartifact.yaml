@@ -8,6 +8,18 @@ on:
         required: false
         type: string
         default: '11'
+      pom_path:
+        required: false
+        type: string
+        default: pom.xml
+      settings_path:
+        required: false
+        type: string
+        default: settings.xml
+      maven_goal:
+        required: false
+        type: string
+        default: package
     secrets:
       CODEARTIFACT_AUTH_ARN:
         required: true
@@ -90,7 +102,7 @@ jobs:
         run: |
           echo "${{ secrets.MAVEN_SETTINGS_BASE64 }}" | base64 -d > settings.xml
       - name: Build with Maven
-        run: mvn -f pom.xml -s settings.xml package
+        run: mvn -f ${{ inputs.pom_path }} -s ${{ inputs.settings_path }} ${{ inputs.maven_goal }}
       - name: Set project name
         id: project-name
         run: |

@@ -164,7 +164,7 @@ jobs:
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
       - name: Update image_tag in cex-cd repo
         env:
-          TAG: ${{ needs.Build.outputs.branch_name }}_${{ needs.Build.outputs.commit_id }}
+          TAG: ${{ needs.build.outputs.branch_name }}_${{ needs.build.outputs.commit_id }}
           DEPLOY_ENV: ${{ needs.set-environment.outputs.deploy_env }}
           PROJECT_NAME: ${{ steps.project-name.outputs.project_name }}
         run: |

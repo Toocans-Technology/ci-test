@@ -109,7 +109,7 @@ jobs:
           echo "commit_id=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
       - name: Build Docker image
         run: |
-          docker build -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/example-java-app:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
+          docker build -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -120,7 +120,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: Push Docker image to ECR
         run: |
-          docker push 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/example-java-app:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }}
+          docker push 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }}
   
   deploy:
     needs: 

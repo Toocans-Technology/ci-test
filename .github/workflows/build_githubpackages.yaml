@@ -32,6 +32,9 @@ on:
       CEX_CD_PAT:
         required: true
         description: Personal Access Token for CEX CD Repository
+      DOCKER_TEMPLATES_PAT:
+        required: true
+        description: Personal Access Token for Docker Templates Repository
 
 
 jobs:
@@ -74,7 +77,6 @@ jobs:
     outputs:
       branch_name: ${{ steps.vars.outputs.branch_name }}
       commit_id: ${{ steps.vars.outputs.commit_id }}
-  
     permissions:
       id-token: write
       contents: read
@@ -83,20 +85,19 @@ jobs:
         run: echo "Deploying to ${{ needs.set-environment.outputs.deploy_env }}"
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Set up JDK 1.8
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '8'
-
-      - name: Get CodeArtifact auth token
+          java-version: ${{ inputs.java_version }}
+      - name: Get Github Package Registry auth token
         run: |
          echo "MAVEN_GITHUB_PACKAGE_PAT=${{ secrets.MAVEN_GITHUB_PACKAGE_PAT }}" >> $GITHUB_ENV
       - name: Set up Maven settings
         run: |
           echo "${{ secrets.MAVEN_GITHUB_PACKAGE_SETTINGS_BASE64 }}" | base64 -d > settings.xml
       - name: Build with Maven
-        run: mvn -f pom.xml -s settings.xml deploy
+        run: mvn -f ${{ inputs.pom_path }} -s ${{ inputs.settings_path }} ${{ inputs.maven_goal }}
       - name: Set project name
         id: project-name
         run: |
@@ -113,9 +114,15 @@ jobs:
           BRANCH=$(echo "${GITHUB_REF#refs/heads/}" | tr '/' '-')
           echo "branch_name=$BRANCH" >> $GITHUB_OUTPUT
           echo "commit_id=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+      - name: Checkout shared dockerfiles repo
+        uses: actions/checkout@v4
+        with:
+          repository: zack-zhang-devops/docker-templates
+          path: docker-templates
+          token: ${{ secrets.DOCKER_TEMPLATES_PAT }} 
       - name: Build Docker image
         run: |
-          docker build -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
+          docker build -f docker-templates/java/Dockerfile_corretto_${{ inputs.java_version }} -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

@@ -89,7 +89,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: ${{ inputs.java_version }}
+          java-version: ${{ inputs.java-version }}
       - name: Get Github Package Registry auth token
         run: |
          echo "MAVEN_GITHUB_PACKAGE_PAT=${{ secrets.MAVEN_GITHUB_PACKAGE_PAT }}" >> $GITHUB_ENV
@@ -122,7 +122,7 @@ jobs:
           token: ${{ secrets.DOCKER_TEMPLATES_PAT }} 
       - name: Build Docker image
         run: |
-          docker build -f docker-templates/java/Dockerfile_corretto_${{ inputs.java_version }} -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
+          docker build -f docker-templates/java/Dockerfile_corretto_${{ inputs.java-version }} -t 054037127978.dkr.ecr.ap-northeast-1.amazonaws.com/java/${{ steps.project-name.outputs.JAR_NAME }}:${{ steps.vars.outputs.branch_name }}_${{ steps.vars.outputs.commit_id }} .
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

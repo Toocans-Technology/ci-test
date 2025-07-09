@@ -77,7 +77,7 @@ jobs:
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.CODEARTIFACT_AUTH_ARN }}
+          role-to-assume: ${{ secrets.CODEARTIFACT_AUTH_ARN }}
           aws-region: ap-northeast-1
 
       - name: Get CodeArtifact auth token
@@ -88,7 +88,7 @@ jobs:
                  --query authorizationToken --output text)" >> $GITHUB_ENV
       - name: Set up Maven settings
         run: |
-          echo "${{ inputs.MAVEN_SETTINGS_BASE64 }}" | base64 -d > settings.xml
+          echo "${{ secrets.MAVEN_SETTINGS_BASE64 }}" | base64 -d > settings.xml
       - name: Build with Maven
         run: mvn -f pom.xml -s settings.xml package
       - name: Set project name
@@ -113,7 +113,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.ECR_AUTH_ARN }}
+          role-to-assume: ${{ secrets.ECR_AUTH_ARN }}
           aws-region: ap-northeast-1
           role-session-name: github-actions-oidc-toocans
       - name: Login to Amazon ECR

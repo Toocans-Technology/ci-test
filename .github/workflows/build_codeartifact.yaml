@@ -71,6 +71,9 @@ jobs:
     if: needs.set-environment.outputs.deploy_env != 'none'
     runs-on: ubuntu-latest
     environment: ${{ needs.set-environment.outputs.deploy_env }}
+    outputs:
+      branch_name: ${{ steps.vars.outputs.branch_name }}
+      commit_id: ${{ steps.vars.outputs.commit_id }}
     permissions:
       id-token: write
       contents: read
